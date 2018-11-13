@@ -25,6 +25,7 @@ public class OtoMotoScraper {
         this.client.getOptions().setCssEnabled(false);
         this.client.getOptions().setJavaScriptEnabled(false);
         this.client.getCookieManager().setCookiesEnabled(true);
+        this.client.getOptions().setTimeout(1000000);
     }
 
     public void traverse() throws IOException, InterruptedException {
@@ -111,6 +112,7 @@ public class OtoMotoScraper {
     private Page sendRequest(int attend, WebRequest request) throws InterruptedException, IOException {
         Thread.sleep((long) (Math.random() * 1000));
         if (attend == 5) {
+            LOGGER.warning("Last attend to connect to: " + request.getUrl());
             Thread.sleep((long) (Math.random() * 330000));
         }
         if (attend > 5) {
