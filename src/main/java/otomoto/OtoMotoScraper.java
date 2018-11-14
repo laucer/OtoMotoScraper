@@ -123,7 +123,7 @@ public class OtoMotoScraper {
         try {
             page = client.getPage(request);
             if (page != null && page.getWebResponse().getContentAsString().contains("Access Denied"))
-                Thread.sleep((long) (Math.random() * 1800000));
+                Thread.sleep((long) (Math.random() * 1800000) + 10000);
             if (page.getWebResponse().getStatusCode() != 200)
                 return sendRequest(attend + 1, request);
         } catch (FailingHttpStatusCodeException | NullPointerException ex) {

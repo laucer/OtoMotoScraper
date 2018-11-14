@@ -1,7 +1,6 @@
 package models;
 
 import java.math.BigDecimal;
-import java.math.MathContext;
 
 public class Car {
 
@@ -14,7 +13,11 @@ public class Car {
     }
 
     public BigDecimal getPrice() {
-        return new BigDecimal(price);
+        try {
+            return new BigDecimal(price);
+        } catch (NullPointerException ex) {
+            return new BigDecimal(0);
+        }
     }
 
     public String getId() {
