@@ -6,8 +6,14 @@ import models.Car;
 import models.Owner;
 import models.OwnerNumberInfo;
 import models.OwnersLibrary;
+import org.apache.commons.io.Charsets;
+import org.apache.http.HttpHost;
+import org.apache.http.client.fluent.Executor;
+import org.apache.http.client.fluent.Request;
+import org.apache.http.message.BasicNameValuePair;
 
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,51 +34,55 @@ public class OtoMotoScraper {
         this.client.getOptions().setTimeout(1000000);
     }
 
-    public void traverse() throws IOException, InterruptedException {
-        Page mainPage = fetchMainPage(1);
-        int lastPage = PageParser.parseLastPageNumber(mainPage.getWebResponse().getContentAsString());
+    public void traverse() throws IOException, InterruptedException, URISyntaxException {
+        String mainPage = fetchMainPage(1);
+        int lastPage = PageParser.parseLastPageNumber(mainPage);
         int currentPage = 1;
         while (currentPage <= lastPage) {
+            final long startTime = System.currentTimeMillis();
             LOGGER.info("Parsing page number = " + currentPage);
-            List<String> carUrls = PageParser.parseCarUrls(mainPage.getWebResponse().getContentAsString());
+            List<String> carUrls = PageParser.parseCarUrls(mainPage);
             fetchCarsInfo(carUrls);
             mainPage = fetchMainPage(++currentPage);
             // TODO: optimize it
             ResultSaver.saveResult("/home/seroz/IdeaProjects/seroz/src/main/resources/results" + (currentPage - 1) + ".txt", ownersLibrary);
+            final long endTime = System.currentTimeMillis();
+            LOGGER.info("It took: " + ((endTime - startTime) / 1000) + " seconds to parse a single page.");
         }
     }
 
-    private Page fetchMainPage(int pageNumber) throws IOException, InterruptedException {
+    private String fetchMainPage(int pageNumber) throws IOException, InterruptedException, URISyntaxException {
         URL url = new URL(BASE_URL + "ajax/search/list/");
         List<NameValuePair> requestParameter = new ArrayList<>();
         NameValuePair parameter1 = new NameValuePair("search[category_id]", "29");
         NameValuePair parameter2 = new NameValuePair("search[city_id]", "17871");
         NameValuePair parameter3 = new NameValuePair("search[dist]", "600");
         NameValuePair parameter4 = new NameValuePair("page", String.valueOf(pageNumber));
+        NameValuePair parameter5 = new NameValuePair("search[private_business]", "business");
         requestParameter.add(parameter1);
         requestParameter.add(parameter2);
         requestParameter.add(parameter3);
         requestParameter.add(parameter4);
+        requestParameter.add(parameter5);
         WebRequest request = new WebRequest(url, HttpMethod.POST);
         request.setRequestParameters(requestParameter);
         request.setAdditionalHeader("Content-Type", "application/x-www-form-urlencoded");
-        Page page = sendRequest(1, request);
-        if (page.getWebResponse().getContentAsString().contains("Wyślij"))
+        String page = sendRequest(request);
+        if (page.contains("Wyślij"))
             LOGGER.info("Successfully fetched main page");
         return page;
     }
 
 
-    private void fetchCarsInfo(List<String> carUrls) throws IOException, InterruptedException {
+    private void fetchCarsInfo(List<String> carUrls) throws IOException, InterruptedException, URISyntaxException {
         for (String href : carUrls) {
             URL url = new URL(href);
             WebRequest request = new WebRequest(url, HttpMethod.GET);
-            Page carPag = sendRequest(1, request);
-            if (carPag == null) {
+            String carPage = sendRequest(request);
+            if (carPage == null) {
                 LOGGER.warning("Could not fetch cars info");
                 return;
             }
-            String carPage = carPag.getWebResponse().getContentAsString();
             Car car = fetchCar(carPage);
             Owner owner = fetchOwner(carPage);
             owner.addCar(car);
@@ -87,7 +97,7 @@ public class OtoMotoScraper {
         return new Car(id, price);
     }
 
-    private Owner fetchOwner(String carPage) throws IOException, InterruptedException {
+    private Owner fetchOwner(String carPage) throws IOException, InterruptedException, URISyntaxException {
         String name = PageParser.parseOwnerName(carPage);
         String location = PageParser.parseOwnerLocation(carPage);
         Set<OwnerNumberInfo> ownerNunmberInfos = PageParser.parseOwnerNumbersInfos(carPage);
@@ -95,13 +105,13 @@ public class OtoMotoScraper {
         return new Owner(name, location, phoneNumbers);
     }
 
-    private List<String> fetchPhoneNumbers(Set<OwnerNumberInfo> ownerNunmberInfos) throws IOException, InterruptedException {
+    private List<String> fetchPhoneNumbers(Set<OwnerNumberInfo> ownerNunmberInfos) throws IOException, InterruptedException, URISyntaxException {
         List<String> phoneNumbers = new ArrayList<>();
         for (OwnerNumberInfo ownerNumberInfo : ownerNunmberInfos) {
             URL url = new URL(BASE_URL + "ajax/misc/contact/multi_phone/" + ownerNumberInfo.getKey() + "/" + ownerNumberInfo.getIndex());
             WebRequest request = new WebRequest(url, HttpMethod.GET);
-            Page numberPage = sendRequest(1, request);
-            String phoneNumber = numberPage != null ? PageParser.parsePhoneNumber(numberPage.getWebResponse().getContentAsString()) : "NO NUMBER";
+            String numberPage = sendRequest(request);
+            String phoneNumber = numberPage != null ? PageParser.parsePhoneNumber(numberPage) : "NO NUMBER";
             phoneNumbers.add(phoneNumber);
         }
         if (phoneNumbers.size() < 1)
@@ -109,28 +119,41 @@ public class OtoMotoScraper {
         return phoneNumbers;
     }
 
-    private Page sendRequest(int attend, WebRequest request) throws InterruptedException, IOException {
-        Thread.sleep((long) (Math.random() * 1000));
-        if (attend == 5) {
-            LOGGER.warning("Last attend to connect to: " + request.getUrl());
-            Thread.sleep((long) (Math.random() * 330000));
-        }
-        if (attend > 5) {
-            LOGGER.warning("Could not send request to: " + request.getUrl());
-            return null;
-        }
-        Page page = null;
+    private String sendRequest(WebRequest request) throws IOException, URISyntaxException {
+        String page = null;
         try {
-            page = client.getPage(request);
-            if (page != null && page.getWebResponse().getContentAsString().contains("Access Denied"))
-                Thread.sleep((long) (Math.random() * 1800000) + 10000);
-            if (page.getWebResponse().getStatusCode() != 200)
-                return sendRequest(attend + 1, request);
+            HttpHost proxy = new HttpHost("zproxy.lum-superproxy.io", 22225);
+            Request apacheRequest = convertToApacheRequest(request);
+            page = Executor.newInstance()
+                    .auth(proxy, "ASK OWNER", "ASK OWNER")
+                    .execute(apacheRequest.viaProxy(proxy))
+                    .returnContent().asString();
         } catch (FailingHttpStatusCodeException | NullPointerException ex) {
-            Thread.sleep((long) (Math.random() * 3000));
-            sendRequest(++attend, request);
+            return null;
         }
         return page;
     }
+
+    private Request convertToApacheRequest(WebRequest webRequest) throws URISyntaxException {
+        URL url = webRequest.getUrl();
+        Request request = webRequest.getHttpMethod().equals(HttpMethod.GET) ? Request.Get(url.toURI()) : Request.Post(url.toURI());
+        webRequest.getAdditionalHeaders().forEach(
+                (key, value) -> {
+                    request.addHeader(key, value);
+                }
+        );
+        if (webRequest.getHttpMethod().equals(HttpMethod.GET))
+            return request;
+        List<org.apache.http.NameValuePair> params = new ArrayList<>();
+        webRequest.getRequestParameters().forEach(
+                (element) -> {
+                    org.apache.http.NameValuePair nameValuePair = new BasicNameValuePair(element.getName(), element.getValue());
+                    params.add(nameValuePair);
+                }
+        );
+        request.bodyForm(params, Charsets.UTF_8);
+        return request;
+    }
+
 }
 
