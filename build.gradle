@@ -17,4 +17,15 @@ dependencies {
     compile 'org.jsoup:jsoup:1.11.3'
     compile group: 'org.apache.httpcomponents', name: 'httpclient', version: '4.5'
     compile group: 'org.apache.httpcomponents', name: 'fluent-hc', version: '4.5'
+    compile group: 'org.apache.commons', name: 'commons-lang3', version: '3.0'
+}
+
+jar {
+    manifest {
+        attributes "Main-Class": "Main"
+    }
+
+    from {
+        configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }
+    }
 }

@@ -14,9 +14,7 @@ public class OwnersLibrary {
         int isUserInDatabase = isUserInDatabase(owner);
         if (isUserInDatabase != -1) {
             LOGGER.info("User exists in database");
-            List<Car> carsToAdd = owner.getCars();
             addAllNotDuplicatedCars(owners.get(isUserInDatabase), owner);
-            owners.get(isUserInDatabase).getCars().addAll(carsToAdd);
         } else {
             owners.add(owner);
         }
@@ -37,9 +35,20 @@ public class OwnersLibrary {
 
     private void addAllNotDuplicatedCars(Owner databaseOwner, Owner newOwner) {
         for (Car car : newOwner.getCars()) {
-            if (databaseOwner.hasCarWithId(car.getId()))
+            if (!databaseOwner.hasCarWithId(car.getId())) {
                 databaseOwner.addCar(car);
+            }else{
+                LOGGER.info("Wanted to add duplicated car");
+            }
         }
+    }
+
+    public int totalCarsParsed() {
+        int result = 0;
+        for (Owner owner : owners) {
+            result += owner.getCars().size();
+        }
+        return result;
     }
 
 }

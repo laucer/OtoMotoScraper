@@ -14,10 +14,10 @@ import java.util.logging.Logger;
 
 public class PageParser {
 
-    private static final Logger LOGGER = Logger.getLogger("PageParser");
+    private static final Logger LOGGER = Logger.getLogger("PageParser-firmy");
 
     public static int parseLastPageNumber(String page) {
-        return Integer.parseInt(Jsoup.parse(page).select(".row").last().select(".page").last().text());
+        return Integer.parseInt(Jsoup.parse(page).select(".om-pager").select(":not(.next)").select(".page").last().text());
     }
 
     public static List<String> parseCarUrls(String page) {

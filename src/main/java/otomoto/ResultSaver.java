@@ -14,7 +14,7 @@ import java.util.logging.Logger;
 
 public class ResultSaver {
 
-    private static final Logger LOGGER = Logger.getLogger("OtoMotoScraper");
+    private static final Logger LOGGER = Logger.getLogger("OtoMotoScraper-firmy");
 
     public static void saveResult(String filename, OwnersLibrary ownersLibrary) throws IOException {
         List<String> lines = getLines(ownersLibrary);

@@ -1,12 +1,15 @@
 package otomoto;
 
-import com.gargoylesoftware.htmlunit.*;
-import com.gargoylesoftware.htmlunit.util.NameValuePair;
+import com.gargoylesoftware.htmlunit.FailingHttpStatusCodeException;
+import com.gargoylesoftware.htmlunit.HttpMethod;
+import com.gargoylesoftware.htmlunit.WebClient;
+import com.gargoylesoftware.htmlunit.WebRequest;
 import models.Car;
 import models.Owner;
 import models.OwnerNumberInfo;
 import models.OwnersLibrary;
 import org.apache.commons.io.Charsets;
+import org.apache.commons.lang3.mutable.MutableInt;
 import org.apache.http.HttpHost;
 import org.apache.http.client.fluent.Executor;
 import org.apache.http.client.fluent.Request;
@@ -18,6 +21,7 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.logging.FileHandler;
 import java.util.logging.Logger;
 
 public class OtoMotoScraper {
@@ -27,49 +31,40 @@ public class OtoMotoScraper {
     private final OwnersLibrary ownersLibrary = new OwnersLibrary();
     private WebClient client = new WebClient();
 
-    public OtoMotoScraper() {
+    public OtoMotoScraper() throws IOException {
         this.client.getOptions().setCssEnabled(false);
         this.client.getOptions().setJavaScriptEnabled(false);
         this.client.getCookieManager().setCookiesEnabled(true);
         this.client.getOptions().setTimeout(1000000);
+        FileHandler fileHandler = new FileHandler("scraper-firmy.log", true);
+        LOGGER.addHandler(fileHandler);
     }
 
-    public void traverse() throws IOException, InterruptedException, URISyntaxException {
+    public void traverse(MutableInt currentPage) throws IOException, InterruptedException, URISyntaxException {
         String mainPage = fetchMainPage(1);
-        int lastPage = PageParser.parseLastPageNumber(mainPage);
-        int currentPage = 1;
-        while (currentPage <= lastPage) {
+        LOGGER.info("Number of pages to parse: " + PageParser.parseLastPageNumber(mainPage));
+        while (!isLastPage(mainPage)) {
             final long startTime = System.currentTimeMillis();
-            LOGGER.info("Parsing page number = " + currentPage);
+            LOGGER.info("Parsing page number = " + currentPage.getValue());
             List<String> carUrls = PageParser.parseCarUrls(mainPage);
             fetchCarsInfo(carUrls);
-            mainPage = fetchMainPage(++currentPage);
-            // TODO: optimize it
-            ResultSaver.saveResult("/home/seroz/IdeaProjects/seroz/src/main/resources/results" + (currentPage - 1) + ".txt", ownersLibrary);
+            currentPage.setValue(currentPage.getValue() + 1);
+            mainPage = fetchMainPage(currentPage.getValue());
+            ResultSaver.saveResult("/home/results/firmy/" + (currentPage.getValue() - 1) + ".txt", ownersLibrary);
             final long endTime = System.currentTimeMillis();
             LOGGER.info("It took: " + ((endTime - startTime) / 1000) + " seconds to parse a single page.");
         }
+        LOGGER.info("Parsed: " + ownersLibrary.totalCarsParsed());
     }
 
-    private String fetchMainPage(int pageNumber) throws IOException, InterruptedException, URISyntaxException {
-        URL url = new URL(BASE_URL + "ajax/search/list/");
-        List<NameValuePair> requestParameter = new ArrayList<>();
-        NameValuePair parameter1 = new NameValuePair("search[category_id]", "29");
-        NameValuePair parameter2 = new NameValuePair("search[city_id]", "17871");
-        NameValuePair parameter3 = new NameValuePair("search[dist]", "600");
-        NameValuePair parameter4 = new NameValuePair("page", String.valueOf(pageNumber));
-        NameValuePair parameter5 = new NameValuePair("search[private_business]", "business");
-        requestParameter.add(parameter1);
-        requestParameter.add(parameter2);
-        requestParameter.add(parameter3);
-        requestParameter.add(parameter4);
-        requestParameter.add(parameter5);
-        WebRequest request = new WebRequest(url, HttpMethod.POST);
-        request.setRequestParameters(requestParameter);
-        request.setAdditionalHeader("Content-Type", "application/x-www-form-urlencoded");
+    private boolean isLastPage(String page) {
+        return page.contains("No results for your search");
+    }
+
+    private String fetchMainPage(int pageNumber) throws IOException, URISyntaxException, InterruptedException {
+        URL url = new URL("https://www.otomoto.pl/osobowe/uzywane/?search[private_business]=business&page=" + pageNumber);
+        WebRequest request = new WebRequest(url, HttpMethod.GET);
         String page = sendRequest(request);
-        if (page.contains("Wyślij"))
-            LOGGER.info("Successfully fetched main page");
         return page;
     }
 
@@ -119,13 +114,13 @@ public class OtoMotoScraper {
         return phoneNumbers;
     }
 
-    private String sendRequest(WebRequest request) throws IOException, URISyntaxException {
+    private String sendRequest(WebRequest request) throws IOException, URISyntaxException, InterruptedException {
         String page = null;
         try {
             HttpHost proxy = new HttpHost("zproxy.lum-superproxy.io", 22225);
             Request apacheRequest = convertToApacheRequest(request);
             page = Executor.newInstance()
-                    .auth(proxy, "ASK OWNER", "ASK OWNER")
+                    .auth(proxy, "LUMINATI_ID", "LUMINATI_PASSWORD")
                     .execute(apacheRequest.viaProxy(proxy))
                     .returnContent().asString();
         } catch (FailingHttpStatusCodeException | NullPointerException ex) {
